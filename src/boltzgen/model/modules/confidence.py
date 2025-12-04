@@ -585,6 +585,7 @@ class ConfidenceHeads(nn.Module):
                 design_iiptm,
                 target_ptm,
                 design_ptm,
+                design_to_target_ipsae,
             ) = compute_ptms(pae_logits, x_pred, feats, multiplicity)
             out_dict["ptm"] = ptm
             out_dict["iptm"] = iptm
@@ -596,6 +597,7 @@ class ConfidenceHeads(nn.Module):
             out_dict["design_iiptm"] = design_iiptm
             out_dict["target_ptm"] = target_ptm
             out_dict["design_ptm"] = design_ptm
+            out_dict["design_to_target_ipsae"] = design_to_target_ipsae
         except Exception as e:
             print(f"Error in compute_ptms: {e}")
             out_dict["ptm"] = torch.zeros_like(complex_plddt)
@@ -608,5 +610,6 @@ class ConfidenceHeads(nn.Module):
             out_dict["design_iiptm"] = torch.zeros_like(complex_plddt)
             out_dict["target_ptm"] = torch.zeros_like(complex_plddt)
             out_dict["design_ptm"] = torch.zeros_like(complex_plddt)
+            out_dict["design_to_target_ipsae"] = torch.zeros_like(complex_plddt)
 
         return out_dict

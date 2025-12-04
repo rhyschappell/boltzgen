@@ -138,6 +138,7 @@ def compute_ptms(logits, x_preds, feats, multiplicity):
     )
     # mask overlapping, collinear tokens and ions (invalid frames)
     mask_pad = feats["token_pad_mask"].repeat_interleave(multiplicity, 0)
+    mask_pad_bool = mask_pad.bool()
     maski = mask_collinear_pred.reshape(-1, mask_collinear_pred.shape[-1])
     pair_mask_ptm = maski[:, :, None] * mask_pad[:, None, :] * mask_pad[:, :, None]
     asym_id = feats["asym_id"].repeat_interleave(multiplicity, 0)
@@ -160,6 +161,10 @@ def compute_ptms(logits, x_preds, feats, multiplicity):
         probs * tm_value,
         dim=-1,
     )  # shape (B, N, N)
+    pae_expected_value = torch.sum(
+        probs * pae_value.view(1, 1, 1, -1),
+        dim=-1,
+    )
     ptm = torch.max(
         torch.sum(tm_expected_value * pair_mask_ptm, dim=-1)
         / (torch.sum(pair_mask_ptm, dim=-1) + 1e-5),
@@ -325,6 +330,29 @@ def compute_ptms(logits, x_preds, feats, multiplicity):
         dim=1,
     ).values
 
+    # Compute ipSAE between design and target groups
+    chain_design_mask_ipsae = (
+        feats["chain_design_mask"]
+        if feats["design_mask"].sum() > 0
+        else feats["design_mask"]
+    )
+    if chain_design_mask_ipsae.shape[0] != mask_pad_bool.shape[0]:
+        chain_design_mask_ipsae = chain_design_mask_ipsae.repeat_interleave(
+            multiplicity, 0
+        )
+    design_mask_ipsae = chain_design_mask_ipsae.bool() & mask_pad_bool
+    target_mask_ipsae = (~design_mask_ipsae) & mask_pad_bool
+    pae_cutoff = 10.0
+    if "ipsae_pae_cutoff" in feats:
+        cutoff_value = feats["ipsae_pae_cutoff"]
+        if isinstance(cutoff_value, torch.Tensor):
+            pae_cutoff = float(cutoff_value.item())
+        else:
+            pae_cutoff = float(cutoff_value)
+    design_to_target_ipsae = _compute_ipsae_from_masks(
+        pae_expected_value, design_mask_ipsae, target_mask_ipsae, pae_cutoff
+    )
+
     return (
         ptm,
         iptm,
@@ -336,7 +364,46 @@ def compute_ptms(logits, x_preds, feats, multiplicity):
         design_iiptm,
         target_ptm,
         design_ptm,
+        design_to_target_ipsae,
     )
+
+
+def _compute_ipsae_from_masks(pae, source_mask, target_mask, pae_cutoff):
+    scores = torch.zeros(pae.shape[0], device=pae.device, dtype=pae.dtype)
+    for idx in range(pae.shape[0]):
+        src_idx = torch.nonzero(source_mask[idx], as_tuple=False).squeeze(-1)
+        tgt_idx = torch.nonzero(target_mask[idx], as_tuple=False).squeeze(-1)
+        if src_idx.numel() == 0 or tgt_idx.numel() == 0:
+            continue
+        score_ab = _directional_ipsae(pae[idx], src_idx, tgt_idx, pae_cutoff)
+        score_ba = _directional_ipsae(pae[idx], tgt_idx, src_idx, pae_cutoff)
+        scores[idx] = min(score_ab, score_ba)
+    return scores
+
+
+def _directional_ipsae(pae, source_indices, partner_indices, pae_cutoff):
+    best = torch.tensor(0.0, device=pae.device, dtype=pae.dtype)
+    for src in source_indices.tolist():
+        interface_pae = pae[src, partner_indices]
+        mask = interface_pae < pae_cutoff
+        if not torch.any(mask):
+            continue
+        partner_count = int(mask.sum().item())
+        d0 = _calc_d0(partner_count)
+        ptm_values = _ptm(interface_pae[mask], d0)
+        best = torch.maximum(best, ptm_values.mean())
+    return float(best.item())
+
+
+def _ptm(pae_values, d0):
+    return 1.0 / (1.0 + (pae_values / d0) ** 2)
+
+
+def _calc_d0(length, pair_type="protein"):
+    length = max(int(length), 27)
+    min_value = 1.0 if pair_type != "nucleic_acid" else 2.0
+    d0 = 1.24 * (length - 15) ** (1.0 / 3.0) - 1.8
+    return max(min_value, d0)
 
 
 class GaussianSmearing(torch.nn.Module):
