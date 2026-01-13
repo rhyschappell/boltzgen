@@ -604,6 +604,7 @@ class Analyze(Task):
         design_resolved_mask = design_mask & feat["token_resolved_mask"].bool()
 
         target_resolved_mask = (~chain_design_mask) & feat["token_resolved_mask"].bool()
+        chain_design_resolved_mask = chain_design_mask & feat["token_resolved_mask"].bool()
         atom_design_resolved_mask = (
             (feat["atom_to_token"].float() @ design_resolved_mask.unsqueeze(-1).float())
             .bool()
@@ -614,9 +615,15 @@ class Analyze(Task):
             .bool()
             .squeeze()
         )
+        atom_chain_design_resolved_mask = (
+            (feat["atom_to_token"].float() @ chain_design_resolved_mask.unsqueeze(-1).float())
+            .bool()
+            .squeeze()
+        )
         atom_resolved_mask = feat["atom_resolved_mask"]
         resolved_atoms_design_mask = atom_design_resolved_mask[atom_resolved_mask]
         resolved_atoms_target_mask = atom_target_resolved_mask[atom_resolved_mask]
+        resolved_atoms_chain_design_mask = atom_chain_design_resolved_mask[atom_resolved_mask]
         atom_chain_mask = (
             (
                 feat["atom_to_token"].float()
@@ -704,7 +711,7 @@ class Analyze(Task):
             ) = get_delta_sasa(
                 path,
                 atom_target_mask=resolved_atoms_target_mask,
-                atom_design_mask=resolved_atoms_design_mask,
+                atom_design_mask=resolved_atoms_chain_design_mask,
             )
             metrics["delta_sasa_original"] = delta_sasa_orig
             metrics["design_sasa_unbound_original"] = design_sasa_unbound
@@ -1088,7 +1095,7 @@ class Analyze(Task):
                 ) = get_delta_sasa(
                     cif_path_refolded,
                     atom_target_mask=resolved_atoms_target_mask,
-                    atom_design_mask=resolved_atoms_design_mask,
+                    atom_design_mask=resolved_atoms_chain_design_mask,
                 )
 
                 metrics["delta_sasa_refolded"] = delta_sasa_refolded
