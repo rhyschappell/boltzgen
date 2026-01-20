@@ -706,6 +706,7 @@ def process_token_features(  # noqa: C901, PLR0915, PLR0912
     ccd = from_numpy(token_data["ccd"]).long()
     binding_type = from_numpy(token_data["binding_type"]).long()
     structure_group = from_numpy(token_data["structure_group"]).long()
+    noise_scale = from_numpy(token_data["noise_scale"]).float()  # For partial diffusion
     center_coords = from_numpy(token_data["center_coords"]).float()
     target_msa_mask = from_numpy(token_data["target_msa_mask"])
     design_ss_mask = from_numpy(token_data["design_ss_mask"])
@@ -865,6 +866,7 @@ def process_token_features(  # noqa: C901, PLR0915, PLR0912
             design = pad_dim(design, 0, pad_len)
             binding_type = pad_dim(binding_type, 0, pad_len)
             structure_group = pad_dim(structure_group, 0, pad_len)
+            noise_scale = pad_dim(noise_scale, 0, pad_len)
             pad_mask = pad_dim(pad_mask, 0, pad_len)
             resolved_mask = pad_dim(resolved_mask, 0, pad_len)
             disto_mask = pad_dim(disto_mask, 0, pad_len)
@@ -901,6 +903,7 @@ def process_token_features(  # noqa: C901, PLR0915, PLR0912
         "design_mask": design,
         "binding_type": binding_type,
         "structure_group": structure_group,
+        "noise_scale": noise_scale,  # For partial diffusion
         "token_bonds": bonds,
         "type_bonds": bonds_type,
         "token_pad_mask": pad_mask,

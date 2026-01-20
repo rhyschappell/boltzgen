@@ -335,6 +335,7 @@ yaml_keys = [
     "leaving_atoms",
     "atom",
     "use_assembly",
+    "noise_scale",
 ]
 
 
@@ -1199,6 +1200,7 @@ class YamlDesignParser:
             all_parsed_chains: dict[str, ParsedChain] = {}
             ligand_id = 1
             structure_groups = np.array([], dtype=np.int32)
+            noise_scale = np.array([], dtype=np.float32)
             res_design_mask = np.array([], dtype=bool)
             res_bind_type = np.array([], dtype=np.int32)
             ss_type = np.array([], dtype=np.int32)
@@ -1366,8 +1368,15 @@ class YamlDesignParser:
                     new_structure_groups = np.zeros(
                         len(new_data.residues), dtype=np.int32
                     )
+                    # Default noise_scale to 1.0 (full noise) for non-file entities
+                    new_noise_scale = np.ones(
+                        len(new_data.residues), dtype=np.float32
+                    )
                     structure_groups = np.concatenate(
                         [structure_groups, new_structure_groups]
+                    )
+                    noise_scale = np.concatenate(
+                        [noise_scale, new_noise_scale]
                     )
                     res_design_mask = np.concatenate(
                         [res_design_mask, new_res_design_mask]
@@ -1401,6 +1410,7 @@ class YamlDesignParser:
                     (
                         new_data,
                         new_groups,
+                        new_noise_scale,
                         new_design_mask,
                         fbind_types,
                         fss_type,
@@ -1427,6 +1437,7 @@ class YamlDesignParser:
                         total_renaming.update(renaming)
                         global_asym_id += max(new_data.chains["asym_id"]) + 1
                     structure_groups = np.concatenate([structure_groups, new_groups])
+                    noise_scale = np.concatenate([noise_scale, new_noise_scale])
                     res_design_mask = np.concatenate([res_design_mask, new_design_mask])
                     res_bind_type = np.concatenate([res_bind_type, fbind_types])
                     ss_type = np.concatenate([ss_type, fss_type])
@@ -1599,6 +1610,7 @@ class YamlDesignParser:
             res_structure_groups=structure_groups,
             res_binding_type=res_bind_type,
             res_ss_types=ss_type,
+            res_noise_scale=noise_scale,
         )
         DesignInfo.is_valid(design_info)
 
@@ -1844,10 +1856,15 @@ class YamlDesignParser:
         missing_mask = np.concatenate(missing_mask)
         include_mask *= missing_mask
 
-        # Get structure groups
+        # Get structure groups and noise scale for partial diffusion
         new_groups = np.zeros(num_res)
+        # Default noise_scale: 1.0 for all residues (backwards compatible - original behavior
+        # was to start all atoms from pure noise regardless of visibility)
+        new_noise_scale = np.ones(num_res, dtype=np.float32)
         if structure_spec is None or structure_spec == "all" or structure_spec == 1:
             new_groups = np.ones(num_res)
+            # noise_scale=1.0 (full noise) preserves original behavior
+            new_noise_scale = np.ones(num_res, dtype=np.float32)
         else:
             for list_element in structure_spec:
                 group = list_element["group"]
@@ -1862,6 +1879,8 @@ class YamlDesignParser:
                 # Handle the "all" case where all chains are set to be specified
                 if chain_id == "all":
                     new_groups = np.ones(num_res)
+                    # noise_scale=1.0 preserves original behavior
+                    new_noise_scale = np.ones(num_res, dtype=np.float32)
                     continue
 
                 if chain_id not in structure.chains["name"]:
@@ -1873,12 +1892,24 @@ class YamlDesignParser:
                 c_end = c_start + data_chain["res_num"].item()
                 visibility = group["visibility"]
 
+                # Get noise_scale: defaults to 1.0 (full noise) for backwards compatibility
+                # User must explicitly set noise_scale < 1.0 to enable partial diffusion
+                if "noise_scale" in group:
+                    group_noise_scale = float(group["noise_scale"])
+                    if not (0.0 <= group_noise_scale <= 1.0):
+                        msg = f"noise_scale must be between 0.0 and 1.0, got {group_noise_scale} for file with path {path}."
+                        raise ValueError(msg)
+                else:
+                    group_noise_scale = 1.0  # Default: full noise (original behavior)
+
                 # Set structure group values to the correct visibility
                 if "res_index" not in group:
                     new_groups[c_start:c_end] = visibility
+                    new_noise_scale[c_start:c_end] = group_noise_scale
                 else:
                     indices = parse_range(group["res_index"], c_start, c_end)
                     new_groups[indices] = visibility
+                    new_noise_scale[indices] = group_noise_scale
 
         # Get design mask for file
         new_design_mask = np.zeros(num_res)
@@ -2058,6 +2089,9 @@ class YamlDesignParser:
                 new_groups = np.insert(
                     new_groups, res_insert_idx, np.zeros(num_residues)
                 )
+                new_noise_scale = np.insert(
+                    new_noise_scale, res_insert_idx, np.ones(num_residues)
+                )  # Full noise for inserted design residues (original behavior)
                 new_design_mask = np.insert(
                     new_design_mask, res_insert_idx, np.ones(num_residues)
                 )
@@ -2074,6 +2108,9 @@ class YamlDesignParser:
 
         # Apply mask to new structure groups. Update structure_groups by concatenating existing and new one
         new_groups = new_groups[include_mask].astype(np.int32)
+
+        # Apply mask to new noise_scale. Update noise_scale by concatenating existing and new one.
+        new_noise_scale = new_noise_scale[include_mask]
 
         # Apply mask to new design_mask. Update design by concatenating existing and new one.
         new_design_mask = new_design_mask[include_mask]
@@ -2165,6 +2202,7 @@ class YamlDesignParser:
         return (
             new_structure,
             new_groups,
+            new_noise_scale,
             new_design_mask,
             fbind_types,
             fss_type,

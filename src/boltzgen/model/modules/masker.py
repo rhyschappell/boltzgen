@@ -89,6 +89,7 @@ class BoltzMasker(Module):
             new["token_pair_mask"] = clone["token_pair_mask"]
             new["binding_type"] = clone["binding_type"]
             new["structure_group"] = clone["structure_group"]
+            new["noise_scale"] = clone["noise_scale"]  # For partial diffusion
             new["cyclic"] = clone["cyclic"]
             new["modified"] = clone["modified"]
             new["token_distance_mask"] = clone["token_distance_mask"]

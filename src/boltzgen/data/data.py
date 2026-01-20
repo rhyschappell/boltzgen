@@ -1927,6 +1927,7 @@ class DesignInfo(NumpySerializable):
     res_structure_groups: npt.NDArray[np.int_]
     res_ss_types: npt.NDArray[np.int_]
     res_binding_type: npt.NDArray[np.int_]
+    res_noise_scale: npt.NDArray[np.float32] = None  # Per-residue noise scale for partial diffusion (0=template, 1=full noise)
 
     @classmethod
     def is_valid(self, info: "DesignInfo") -> bool:
@@ -1936,6 +1937,7 @@ class DesignInfo(NumpySerializable):
             len(info.res_design_mask) == len(info.res_structure_groups)
             and len(info.res_structure_groups) == len(info.res_ss_types)
             and len(info.res_ss_types) == len(info.res_binding_type)
+            and (info.res_noise_scale is None or len(info.res_noise_scale) == len(info.res_design_mask))
         ), (
             "There must be a bug in the code. All residue level design info objects should have the same length."
         )
@@ -2046,6 +2048,7 @@ Token = [
     ("design_mask", np.dtype("?")),
     ("binding_type", np.dtype("i4")),
     ("structure_group", np.dtype("i4")),
+    ("noise_scale", np.dtype("f4")),  # Noise scale for partial diffusion (0=template, 1=full noise)
     ("ccd", np.dtype("5i4")),
     ("target_msa_mask", np.dtype("?")),
     ("design_ss_mask", np.dtype("?")),

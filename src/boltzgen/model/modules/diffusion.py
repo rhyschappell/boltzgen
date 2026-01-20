@@ -552,8 +552,44 @@ class AtomDiffusion(Module):
 
         # atom position is noise at the beginning
         init_sigma = sigmas[0]
-        atom_coords = init_sigma * torch.randn(shape, device=self.device)
         feats = network_condition_kwargs["feats"]
+
+        # Handle partial diffusion: blend template coordinates with noise
+        # based on per-token noise_scale (0=template, 1=full noise)
+        # Note: noise_scale defaults to 1.0, so without explicit setting this
+        # produces the original behavior (pure noise initialization)
+        if "noise_scale" in feats and feats["coords"] is not None:
+            # Get token-level noise_scale and propagate to atom level
+            token_noise_scale = feats["noise_scale"]  # (B, N_tokens)
+            atom_to_token = feats["atom_to_token"]  # (B, N_atoms, N_tokens) one-hot
+            # Propagate to atom level: (B, N_atoms)
+            atom_noise_scale = torch.bmm(
+                atom_to_token.float(),
+                token_noise_scale.unsqueeze(-1).float()
+            ).squeeze(-1)
+            atom_noise_scale = atom_noise_scale.repeat_interleave(multiplicity, 0)
+
+            # Get template coordinates
+            template_coords = feats["coords"]  # (B, N_atoms, 3) or (B, N_ens, N_atoms, 3)
+            if len(template_coords.shape) == 4:
+                template_coords = template_coords[:, 0]  # Take first ensemble member
+            template_coords = template_coords.repeat_interleave(multiplicity, 0)
+
+            # Generate pure noise (original initialization)
+            pure_noise = init_sigma * torch.randn(shape, device=self.device)
+
+            # Interpolate between template and pure noise based on noise_scale:
+            # noise_scale=0: pure template (no exploration)
+            # noise_scale=1: pure noise (original behavior, full exploration)
+            # noise_scale=0.3: 70% template + 30% noise (partial exploration)
+            atom_noise_scale_3d = atom_noise_scale.unsqueeze(-1)  # (B, N_atoms, 1)
+            atom_coords = (
+                template_coords * (1 - atom_noise_scale_3d) +
+                pure_noise * atom_noise_scale_3d
+            )
+        else:
+            # Original behavior - pure noise initialization
+            atom_coords = init_sigma * torch.randn(shape, device=self.device)
 
         # gradually denoise
         coords_traj = [atom_coords]

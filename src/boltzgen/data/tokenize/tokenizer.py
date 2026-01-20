@@ -50,6 +50,7 @@ class TokenData:
     design: bool
     binding_type: int
     structure_group: int
+    noise_scale: float  # Noise scale for partial diffusion (0=template, 1=full noise)
     ccd: np.ndarray
     target_msa_mask: bool
     design_ss_mask: bool
@@ -265,6 +266,7 @@ class Tokenizer:
                         design=False,
                         binding_type=const.binding_type_ids["UNSPECIFIED"],
                         structure_group=0,
+                        noise_scale=1.0,
                         ccd=convert_ccd(res["name"]),
                         target_msa_mask=0,
                         design_ss_mask=0,
@@ -329,6 +331,7 @@ class Tokenizer:
                             design=False,
                             binding_type=const.binding_type_ids["UNSPECIFIED"],
                             structure_group=0,
+                            noise_scale=1.0,
                             ccd=convert_ccd(res["name"]),
                             target_msa_mask=0,
                             design_ss_mask=0,
@@ -387,6 +390,7 @@ class Tokenizer:
                         design=False,
                         binding_type=const.binding_type_ids["UNSPECIFIED"],
                         structure_group=0,
+                        noise_scale=1.0,
                         ccd=convert_ccd(res["name"]),
                         target_msa_mask=0,
                         design_ss_mask=0,
